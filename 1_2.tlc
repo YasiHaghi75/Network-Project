@@ -1,0 +1,77 @@
+set ns [new Simulator]
+set namf [open out1_2.nam w]
+set tracef [open trace1_2.tr w]
+$ns namtrace-all $namf
+$ns trace-all $tracef
+set bandwidth [open part1_2.txt w]
+proc finish {} {
+global ns namf bandwidth tracef
+#define global variables for this procedure
+$ns flush-trace
+close $bandwidth
+close $tracef
+
+close $namf
+exec nam out.nam
+exit 0
+}
+$ns namtrace-all $namf
+$ns trace-all $tracef
+set n(0) [$ns node]
+set n(1) [$ns node]
+$n(0) color "red"
+$n(1) color "blue"
+$ns at 0.0 "$n(0) label Sender"
+$ns at 0.0 "$n(1) label Receiver"
+
+set LineBW 2000000
+set LineDelay 0.006
+$ns duplex-link $n(0) $n(1) $LineBW $LineDelay DropTail
+$ns duplex-link-op $n(0) $n(1) orient right-up
+set myLink [[$ns link $n(0) $n(1)] link]
+set tcp [new Agent/TCP]
+$ns attach-agent $n(0) $tcp
+$tcp set window_ 1
+$tcp set maxcwnd_ 1
+$tcp set maxseq_ 50000000
+
+set ftp [new Application/FTP]
+$ftp attach-agent $tcp
+set tcpsnk [new Agent/TCPSink]
+$ns attach-agent $n(1) $tcpsnk
+$ns connect $tcp $tcpsnk
+$ns color 1 Blue
+$tcp set fid_ 1
+set headersize 40
+set framelen 30
+set timeinterval 10.0
+set firstacknum [$tcp set ack_]
+set lastacknum [$tcp set ack_]
+$tcp set packetSize_ $framelen
+proc record {} {
+global bandwidth framelen myLink LineBW LineDelay tcp ns firstacknum lastacknum headersize timeinterval n
+#get the ack number of the current frame
+set lastacknum [$tcp set ack_]
+#compares this ACK number with the one from 10 second before in order to determine
+#transmitter bandwidth
+set bw [expr ( $lastacknum - $firstacknum +1)*($framelen + $headersize )*8 ]
+set now [$ns now]
+$tcp set packetSize_ $framelen
+#fill the text file:
+puts $bandwidth " $LineDelay [expr (($bw)/($timeinterval*$LineBW))] "
+#record this ack number for next loop:
+set firstacknum [$tcp set ack_]
+#record this ack number for next loop:
+set firstacknum $lastacknum
+#increasing the frame length for next packet:
+#set framelen [expr ($framelen+10) ]
+#$tcp set packetSize_ $framelen
+set LineDelay [expr ($LineDelay + 0.0095)]
+$myLink set delay_ $LineDelay
+#execute this proc every 10 second (timeinterval=10)
+$ns at [expr $now+$timeinterval] "record"
+ }
+$ns at 1.0 "$ftp start"
+$ns at 11.0 "record"
+$ns at 1000.0 "finish"
+$ns run
